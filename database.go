@@ -246,6 +246,7 @@ func (j *JDB) addMeasurement(m *Measurement) {
 	}
 
 	j.measurements[m.Name][dsStr] = append(j.measurements[m.Name][dsStr], m)
+
 	if _, ok := j.indices[m.Name]; !ok {
 		j.indices[m.Name] = make(map[string]map[string][]*Measurement)
 	}
