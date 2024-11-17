@@ -60,13 +60,13 @@ func New(file string) (j *JDB, err error) {
 	Logger.Info("Creating new JDB instance from disk", "stage", "boot", "file", file)
 
 	j = new(JDB)
-	j.saveBuffer = make([]*Measurement, 0)
+	j.saveBuffer = make([]*Measurement, 0, FlushMaxSize)
 	j.lastSave = time.Now()
 
 	j.measurements = make(map[string]map[string][]*Measurement)
 	j.indices = make(map[string]map[string]map[string][]*Measurement)
 
-	j.f, err = os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModeAppend)
+	j.f, err = os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0640)
 	if err != nil {
 		return
 	}
@@ -287,7 +287,7 @@ func (j *JDB) flush() (err error) {
 		}
 	}
 
-	j.saveBuffer = nil
+	j.saveBuffer = make([]*Measurement, 0, FlushMaxSize)
 	j.lastSave = time.Now()
 
 	return
