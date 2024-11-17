@@ -35,19 +35,10 @@ func ExampleNew_create_database_and_query_index() {
 		m := &jdb.Measurement{
 			When: t,
 			Name: "environmental_monitoring",
-			Dimensions: []jdb.Dimension{
-				{
-					Name:  "Temperature",
-					Value: 19.23,
-				},
-				{
-					Name:  "Hummidity",
-					Value: 52.43234,
-				},
-				{
-					Name:  "AQI",
-					Value: 1,
-				},
+			Dimensions: map[string]float64{
+				"Temperature": 19.23,
+				"Humidity":    52.43234,
+				"AQI":         1,
 			},
 			Labels: map[string]string{
 				"sensor_version": "v1.0.1",
@@ -107,7 +98,7 @@ func ExampleNew_create_close_reopen_database() {
 		panic(err)
 	}
 
-	err = database.Insert(&jdb.Measurement{Name: "counters", Dimensions: []jdb.Dimension{{Name: "Counter", Value: 1234}}})
+	err = database.Insert(&jdb.Measurement{Name: "counters", Dimensions: map[string]float64{"Counter": 1234}})
 	if err != nil {
 		panic(err)
 	}

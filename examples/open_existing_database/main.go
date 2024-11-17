@@ -25,7 +25,7 @@ func main() {
 		panic(err)
 	}
 
-	err = database.Insert(&jdb.Measurement{Name: "counters", Dimensions: []jdb.Dimension{{Name: "Counter", Value: 1234}}})
+	err = database.Insert(&jdb.Measurement{Name: "counters", Dimensions: map[string]float64{"Counter": 1234}})
 	if err != nil {
 		panic(err)
 	}

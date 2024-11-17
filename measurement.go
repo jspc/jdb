@@ -13,11 +13,11 @@ var (
 const dtsFmt = "2006-01-02_15"
 
 type Measurement struct {
-	When       time.Time         `json:"when"`
-	Name       string            `json:"name"`
-	Dimensions []Dimension       `json:"dimensions"`
-	Labels     map[string]string `json:"labels"`
-	Indices    map[string]string `json:"indices"`
+	When       time.Time          `json:"when"`
+	Name       string             `json:"name"`
+	Dimensions map[string]float64 `json:"dimensions"`
+	Labels     map[string]string  `json:"labels"`
+	Indices    map[string]string  `json:"indices"`
 }
 
 func (m Measurement) DTS() string {
@@ -34,16 +34,4 @@ func (m Measurement) Validate() error {
 	}
 
 	return nil
-}
-
-type DimensionType uint8
-
-const (
-	DimensionUnknown DimensionType = iota
-)
-
-type Dimension struct {
-	Name  string        `json:"name"`
-	Type  DimensionType `json:"type"`
-	Value float64       `json:"value"`
 }

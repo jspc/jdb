@@ -37,19 +37,10 @@ func main() {
 		m := &jdb.Measurement{
 			When: t,
 			Name: "environmental_monitoring",
-			Dimensions: []jdb.Dimension{
-				{
-					Name:  "Temperature",
-					Value: 19.23,
-				},
-				{
-					Name:  "Hummidity",
-					Value: 52.43234,
-				},
-				{
-					Name:  "AQI",
-					Value: 1,
-				},
+			Dimensions: map[string]float64{
+				"Temperature": 19.23,
+				"Humidity":    52.43234,
+				"AQI":         1,
 			},
 			Labels: map[string]string{
 				"sensor_version": "v1.0.1",
