@@ -66,6 +66,7 @@ func New(file string) (j *JDB, err error) {
 	j.measurements = make(map[string]map[string][]*Measurement)
 	j.indices = make(map[string]map[string]map[string][]*Measurement)
 
+	// #nosec: G302,G304
 	j.f, err = os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0640)
 	if err != nil {
 		return

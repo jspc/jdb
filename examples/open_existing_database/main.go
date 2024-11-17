@@ -13,7 +13,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	f.Close()
+
+	err = f.Close()
+	if err != nil {
+		panic(err)
+	}
 
 	// Effectively disable flushing to disk for the sake of
 	// timeliness in this test
@@ -39,7 +43,10 @@ func main() {
 	fmt.Printf("counters: %d\n", len(m))
 
 	// Close database
-	database.Close()
+	err = database.Close()
+	if err != nil {
+		panic(err)
+	}
 
 	// Reopen, reconcile for same data
 	database, err = jdb.New(f.Name())
