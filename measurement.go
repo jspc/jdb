@@ -24,10 +24,6 @@ type Measurement struct {
 	Indices    map[string]string  `json:"indices"`
 }
 
-func (m Measurement) DTS() string {
-	return m.When.Format(dtsFmt)
-}
-
 func (m Measurement) Validate() error {
 	if len(m.Name) == 0 {
 		return ErrEmptyName
@@ -38,6 +34,10 @@ func (m Measurement) Validate() error {
 	}
 
 	return nil
+}
+
+func (m Measurement) dts() string {
+	return m.When.Format(dtsFmt)
 }
 
 func (m Measurement) ids() (ids []string) {

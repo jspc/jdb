@@ -227,7 +227,7 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 	j.saveBuffer = append(j.saveBuffer, m)
 
 	// Ensure the new Measurement is placed in the right place(s)
-	slices.SortFunc(j.measurements[m.Name][m.DTS()], func(a, b *Measurement) int {
+	slices.SortFunc(j.measurements[m.Name][m.dts()], func(a, b *Measurement) int {
 		return a.When.Compare(b.When)
 	})
 
@@ -398,7 +398,7 @@ func (j *JDB) addMeasurement(m *Measurement, ids []string, fields map[string]mea
 		j.measurements[m.Name] = make(map[string][]*Measurement)
 	}
 
-	dsStr := m.DTS()
+	dsStr := m.dts()
 	if _, ok := j.measurements[m.Name][dsStr]; !ok {
 		j.measurements[m.Name][dsStr] = make([]*Measurement, 0)
 	}
