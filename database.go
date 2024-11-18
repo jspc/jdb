@@ -252,7 +252,7 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 }
 
 // QueryAll returns all measurements against a specific name
-func (j *JDB) QueryAll(name string) (m []*Measurement, err error) {
+func (j *JDB) QueryAll(name string, opts *Options) (m []*Measurement, err error) {
 	measurement, ok := j.measurements[name]
 	if !ok {
 		err = ErrNoSuchMeasurement
@@ -262,7 +262,16 @@ func (j *JDB) QueryAll(name string) (m []*Measurement, err error) {
 
 	tmpM := make([][]*Measurement, 0)
 	for _, shard := range measurement {
-		tmpM = append(tmpM, shard)
+		switch opts {
+		case nil:
+			tmpM = append(tmpM, shard)
+
+		default:
+			v := opts.validMeasurements(shard)
+			if len(v) > 0 {
+				tmpM = append(tmpM, v)
+			}
+		}
 	}
 
 	slices.SortFunc(tmpM, func(a, b []*Measurement) int {
@@ -277,8 +286,8 @@ func (j *JDB) QueryAll(name string) (m []*Measurement, err error) {
 	return
 }
 
-func (j *JDB) QueryAllCSV(name string) (b []byte, err error) {
-	measurements, err := j.QueryAll(name)
+func (j *JDB) QueryAllCSV(name string, opts *Options) (b []byte, err error) {
+	measurements, err := j.QueryAll(name, opts)
 	if err != nil {
 		return
 	}
@@ -347,7 +356,7 @@ func (j *JDB) QueryAllCSV(name string) (b []byte, err error) {
 
 // QueryAllIndex returns all measurements against a specific name, which has
 // a specific index
-func (j *JDB) QueryAllIndex(name, index, indexValue string) (m []*Measurement, err error) {
+func (j *JDB) QueryAllIndex(name, index, indexValue string, opts *Options) (m []*Measurement, err error) {
 	measurement, ok := j.indices[name]
 	if !ok {
 		err = ErrNoSuchMeasurement
@@ -362,7 +371,11 @@ func (j *JDB) QueryAllIndex(name, index, indexValue string) (m []*Measurement, e
 		return
 	}
 
-	return idx[indexValue], nil
+	if opts == nil {
+		return idx[indexValue], nil
+	}
+
+	return opts.validMeasurements(idx[indexValue]), nil
 }
 
 func (j *JDB) QueryFields(measurement string) (fields []string, err error) {

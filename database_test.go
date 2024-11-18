@@ -186,7 +186,63 @@ func TestJDB_QueryAll(t *testing.T) {
 		{"Valid measurement returns correctly", "wibbles", 10, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			m, err := db.QueryAll(test.searchName)
+			m, err := db.QueryAll(test.searchName, nil)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+
+			rcvd := len(m)
+			if test.expectCount != rcvd {
+				t.Errorf("expected: %d, received %d", test.expectCount, rcvd)
+			}
+		})
+	}
+}
+
+func TestJDB_QueryAll_options(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		err = db.Insert(&jdb.Measurement{
+			Name: "wibbles",
+			When: now.Add(0 - time.Hour*time.Duration(i)),
+			Dimensions: map[string]float64{
+				"wobble_count": float64(i * 17),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, test := range []struct {
+		name        string
+		searchName  string
+		opts        *jdb.Options
+		expectCount int
+		expectErr   bool
+	}{
+		{"Nil options returns all values", "wibbles", nil, 10, false},
+		{"Empty options returns all values", "wibbles", new(jdb.Options), 10, false},
+		{"Setting To to now and leaving all else returns all values", "wibbles", &jdb.Options{To: now}, 10, false},
+		{"Setting To to now and setting Duration to 24 hours returns all values", "wibbles", &jdb.Options{To: now, Since: time.Hour * 24}, 10, false},
+		{"Setting Duration to 24 hours and leaving all else returns all values", "wibbles", &jdb.Options{Since: time.Hour * 24}, 10, false},
+		{"Setting From to 2 hours ago returns three values", "wibbles", &jdb.Options{From: now.Add(0 - time.Hour*2)}, 3, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := db.QueryAll(test.searchName, test.opts)
 			if test.expectErr == (err == nil) {
 				t.Errorf("expected: %v, received %#v", test.expectErr, err)
 			}
@@ -266,7 +322,7 @@ func TestJDB_QueryAllCSV(t *testing.T) {
 		{"Querying valid measurement should return union of all fields", "wibbles", 12, 9, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			b, err := db.QueryAllCSV(test.measurement)
+			b, err := db.QueryAllCSV(test.measurement, nil)
 			if test.expectErr == (err == nil) {
 				t.Errorf("expected: %v, received %#v", test.expectErr, err)
 			}
@@ -346,7 +402,7 @@ func TestJDB_QueryAllIndex(t *testing.T) {
 		{"Valid measurement and index returns correctly", "wibbles", "wizzles", "plenty", 10, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			m, err := db.QueryAllIndex(test.searchName, test.searchIndex, test.searchIndexKey)
+			m, err := db.QueryAllIndex(test.searchName, test.searchIndex, test.searchIndexKey, nil)
 			if test.expectErr == (err == nil) {
 				t.Errorf("expected: %v, received %#v", test.expectErr, err)
 			}
@@ -459,7 +515,7 @@ func ExampleNew_create_database_and_query_index() {
 	}
 
 	// Query an empty index
-	measurements, err := database.QueryAllIndex("environmental_monitoring", "location", "bedroom")
+	measurements, err := database.QueryAllIndex("environmental_monitoring", "location", "bedroom", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -467,7 +523,7 @@ func ExampleNew_create_database_and_query_index() {
 	fmt.Printf("measurements where location == bedroom: %d\n", len(measurements))
 
 	// Query an index with items
-	measurements, err = database.QueryAllIndex("environmental_monitoring", "location", "living room")
+	measurements, err = database.QueryAllIndex("environmental_monitoring", "location", "living room", new(jdb.Options))
 	if err != nil {
 		panic(err)
 	}
@@ -502,7 +558,7 @@ func ExampleNew_create_close_reopen_database() {
 	}
 
 	// Query database
-	m, err := database.QueryAll("counters")
+	m, err := database.QueryAll("counters", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -518,7 +574,7 @@ func ExampleNew_create_close_reopen_database() {
 		panic(err)
 	}
 
-	m, err = database.QueryAll("counters")
+	m, err = database.QueryAll("counters", nil)
 	if err != nil {
 		panic(err)
 	}
