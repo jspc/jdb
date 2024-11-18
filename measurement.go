@@ -14,8 +14,41 @@ var (
 	ErrFieldInUse   = errors.New("field names must be unique across dimensions, labels, and indices for a given Measurement name")
 )
 
-const dtsFmt = "2006-01-02_15"
+const (
+	dtsFmt = "2006-01-02_15"
 
+	// DefaultIndexName is used for Measurements where an Index
+	// hasn't beed specified so we can still de-dupe it.
+	DefaultIndexName = "_default_index"
+)
+
+// A Measurement represents a collection of values and metadata to store
+// against a timestamp.
+//
+// It contains a timestamp, measurement name, some dimensions, some indices,
+// and some labels.
+//
+// In our world, a Measurement Name might be analogous to a database name.
+// A Measurement has one or more numerical Dimensions, some labels and some
+// indices.
+//
+// The only differences between a label and an index is that an index is
+// searchable and a label isn't. Because of this, an index takes up more
+// memory space and so isn't always appropriate. If you're never going to
+// need to search for a given string then it's best off using a label for the
+// sake of resources and speed.
+//
+// Internally, Measurements are deduplicated by deriving a Measurement ID of
+// the format:
+//
+//	id := name + \0x00 + indexName + \0x00 + indexValue + \0x00 + measurement_timestamp_in_nanoseconds + \0x00
+//
+// and then base64 encoded.
+//
+// This does mean there's the potential for collisions, should multiple Measurements
+// have the same name, index, and timestamp (to the nanosecond); it's _unlikely_ to
+// happen, but it's possible. With this in mind, indexing on a sensor ID, or
+// something unique to the creator of a Measurement is always smart
 type Measurement struct {
 	When       time.Time          `json:"when"`
 	Name       string             `json:"name"`

@@ -48,6 +48,15 @@ var (
 	ErrDuplicateMeasurement = errors.New("measurement and index combination exist for this timestamp")
 )
 
+// JDB is an embeddable Schemaless Timeseries Database, queried in-memory, and
+// with on-disc persistence.
+//
+// It is deliberately naive and is designed to be 'good-enough'. It wont solve
+// all of your woes, it wont handle petabytes of scale, and it wont make your
+// applications more enterprisey.
+//
+// It will, however, give you a reasonably quick way of storing timeseries, querying
+// against an index or time range, and provide de-duplication gaurantees.
 type JDB struct {
 	f *os.File
 
@@ -91,7 +100,16 @@ type JDB struct {
 	measurementFields map[string]map[string]measurementFieldType
 }
 
-// New returns a JDB from a databse file on disk
+// New returns a JDB from a databse file on disk, creating the database file if it
+// doesn't already exist.
+//
+// New returns errors in the following contexts:
+//
+//  1. Where the OS can't open a database file for writing
+//  2. The file it has opened isn't valid for JDB
+//
+// This function outputs optional logs, which can be enabled by setting `jdb.Logger` to
+// a valid `slog.Logger`
 func New(file string) (j *JDB, err error) {
 	Logger.Info("Creating new JDB instance from disk", "stage", "boot", "file", file)
 
@@ -198,6 +216,20 @@ func (j *JDB) Close() (err error) {
 	return j.f.Close()
 }
 
+// Insert a Measurement into the database.
+//
+// Insert does this by performing a handful of tasks:
+//
+//  1. Insert will call m.Validate() to ensure the data is correct
+//  2. Check whether we've already received this Measurement, erroring if so
+//  3. Adding the Measurement to the underlying data structure(s)
+//  4. Updating Measurement metadata (field names, indices, etc.)
+//  5. Persisting to disk if the write buffer is full, or it's been some time since the last write
+//
+// Because we're using slices and maps under the hood without intermediate buffers, this
+// call relies on mutexes that may be slow at times.
+//
+// The upshot of this is that calls to Insert are immediately consistent.
 func (j *JDB) Insert(m *Measurement) (err error) {
 	// Validate the measurement before doing anything else
 	if err = m.Validate(); err != nil {
@@ -251,7 +283,14 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 	return
 }
 
-// QueryAll returns all measurements against a specific name
+// QueryAll queries for a Measurement name, returning all Measurements that fit.
+//
+// When opts is not nil, the specified time slicing options are used to
+// return a subset of Measurements.
+//
+// For the purposes of time slicing, setting opts to nil has identical behaviour to
+// setting it to empty, such as `&jdb.Options{}`, or `new(jdb.Options)`- though setting
+// opts as nil saves a chunk of cycles and is, therefore, marginallty more efficient
 func (j *JDB) QueryAll(name string, opts *Options) (m []*Measurement, err error) {
 	measurement, ok := j.measurements[name]
 	if !ok {
@@ -286,6 +325,21 @@ func (j *JDB) QueryAll(name string, opts *Options) (m []*Measurement, err error)
 	return
 }
 
+// QueryAllCSV works identically to `QueryAll` (in fact it calls `QueryAll` under
+// the hood), but returns Measurements as a []byte representation of the generated
+// CSV.
+//
+// It can be quite expensive for large datasets.
+//
+// This function can be used to load data into other sources, such as jupyter, or
+// a spreadsheet.
+//
+// When opts is not nil, the specified time slicing options are used to
+// return a subset of Measurements.
+//
+// For the purposes of time slicing, setting opts to nil has identical behaviour to
+// setting it to empty, such as `&jdb.Options{}`, or `new(jdb.Options)`- though setting
+// opts as nil saves a chunk of cycles and is, therefore, marginallty more efficient
 func (j *JDB) QueryAllCSV(name string, opts *Options) (b []byte, err error) {
 	measurements, err := j.QueryAll(name, opts)
 	if err != nil {
@@ -354,8 +408,14 @@ func (j *JDB) QueryAllCSV(name string, opts *Options) (b []byte, err error) {
 	return buf.Bytes(), err
 }
 
-// QueryAllIndex returns all measurements against a specific name, which has
-// a specific index
+// QueryAllIndex queries for a Measurement name, returning all Measurements with a specific Index value.
+//
+// When opts is not nil, the specified time slicing options are used to
+// return a subset of Measurements.
+//
+// For the purposes of time slicing, setting opts to nil has identical behaviour to
+// setting it to empty, such as `&jdb.Options{}`, or `new(jdb.Options)`- though setting
+// opts as nil saves a chunk of cycles and is, therefore, marginallty more efficient
 func (j *JDB) QueryAllIndex(name, index, indexValue string, opts *Options) (m []*Measurement, err error) {
 	measurement, ok := j.indices[name]
 	if !ok {
@@ -378,6 +438,7 @@ func (j *JDB) QueryAllIndex(name, index, indexValue string, opts *Options) (m []
 	return opts.validMeasurements(idx[indexValue]), nil
 }
 
+// QueryFields returns the fields set for a Measurement
 func (j *JDB) QueryFields(measurement string) (fields []string, err error) {
 	fm, ok := j.measurementFields[measurement]
 	if !ok {

@@ -69,7 +69,7 @@ func main() {
 	fmt.Println()
 
 	// Query an empty index
-	measurements, err := database.QueryAllIndex("environmental_monitoring", "location", "bedroom")
+	measurements, err := database.QueryAllIndex("environmental_monitoring", "location", "bedroom", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -77,7 +77,7 @@ func main() {
 	fmt.Printf("measurements where location == bedroom: %d\n", len(measurements))
 
 	// Query an index with items
-	measurements, err = database.QueryAllIndex("environmental_monitoring", "location", "living room")
+	measurements, err = database.QueryAllIndex("environmental_monitoring", "location", "living room", nil)
 	if err != nil {
 		panic(err)
 	}

@@ -35,7 +35,7 @@ func main() {
 	}
 
 	// Query database
-	m, err := database.QueryAll("counters")
+	m, err := database.QueryAll("counters", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -54,7 +54,7 @@ func main() {
 		panic(err)
 	}
 
-	m, err = database.QueryAll("counters")
+	m, err = database.QueryAll("counters", nil)
 	if err != nil {
 		panic(err)
 	}
