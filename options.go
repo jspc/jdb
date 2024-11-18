@@ -15,7 +15,7 @@ type Options struct {
 	//
 	// This field is ignored if `Since` is set. If this field is unset
 	// and To is set then From implies "All data from the start of time"
-	From time.Time `json:"from"`
+	From time.Time `json:"from" form:"from"`
 
 	// To defines the latest timestamp to return Measurements for.
 	// Similarly to From, if this field is empty and From is set, then
@@ -23,12 +23,12 @@ type Options struct {
 	//
 	// If both this field and Since are set, then JDB returns the last
 	// `Since` duration _to_ To
-	To time.Time `json:"to"`
+	To time.Time `json:"to" form:"to"`
 
 	// Since returns Measurements created within the Duration covered by
 	// this field. If `To` is unset, then Since returns up until the
 	// current time
-	Since time.Duration `json:"since"`
+	Since time.Duration `json:"since" form:"since"`
 }
 
 func (o Options) mRange() (from, to time.Time) {
