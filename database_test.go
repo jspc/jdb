@@ -109,6 +109,7 @@ func TestJDB_Insert_with_small_buffer(t *testing.T) {
 	for i := 0; i < jdb.FlushMaxSize*5; i++ {
 		err = db.Insert(&jdb.Measurement{
 			Name: "wibbles",
+			When: time.Now().Add(0 - time.Hour*time.Duration(i)),
 			Dimensions: map[string]float64{
 				"wobble_count": float64(i * 17),
 			},
@@ -138,6 +139,7 @@ func TestJDB_Insert_with_short_duration(t *testing.T) {
 	for i := 0; i < jdb.FlushMaxSize*5; i++ {
 		err = db.Insert(&jdb.Measurement{
 			Name: "wibbles",
+			When: time.Now().Add(0 - time.Hour*time.Duration(i)),
 			Dimensions: map[string]float64{
 				"wobble_count": float64(i * 17),
 			},
@@ -432,6 +434,7 @@ func TestJDB_QueryFields(t *testing.T) {
 	for i := 0; i < jdb.FlushMaxSize*5; i++ {
 		err = db.Insert(&jdb.Measurement{
 			Name: "wibbles",
+			When: time.Now().Add(0 - time.Hour*time.Duration(i)),
 			Dimensions: map[string]float64{
 				"wobble_count": float64(i * 17),
 			},
@@ -448,7 +451,7 @@ func TestJDB_QueryFields(t *testing.T) {
 		expectErr    bool
 	}{
 		{"Querying an unknown measure should fail", "wet_hankies", 0, true},
-		{"Querying an valid measure should succeed", "wibbles", 1, false},
+		{"Querying an valid measure should succeed", "wibbles", 2, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f, err := db.QueryFields(test.measurement)

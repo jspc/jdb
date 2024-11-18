@@ -24,13 +24,29 @@ type Measurement struct {
 	Indices    map[string]string  `json:"indices"`
 }
 
-func (m Measurement) Validate() error {
+// Validate returns an error if:
+//
+//  1. The Measurement name is empty
+//  2. The Measurement has no Dimensions
+//
+// If the Measurement has no indices, we create one called `_default_index`
+// with the same value as the Measurement name. This exists purely to make
+// deduplication easier and can be ignored by pretty much everything
+//
+// Without these three elements, a Measurement is functionally meaningless
+func (m *Measurement) Validate() error {
 	if len(m.Name) == 0 {
 		return ErrEmptyName
 	}
 
 	if len(m.Dimensions) == 0 {
 		return ErrNoDimensions
+	}
+
+	if len(m.Indices) == 0 {
+		m.Indices = map[string]string{
+			DefaultIndexName: m.Name,
+		}
 	}
 
 	return nil
