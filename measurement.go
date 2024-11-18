@@ -11,6 +11,7 @@ import (
 var (
 	ErrEmptyName    = errors.New("measurement name must not be empty")
 	ErrNoDimensions = errors.New("measurement has no dimensions")
+	ErrFieldInUse   = errors.New("field names must be unique across dimensions, labels, and indices for a given Measurement name")
 )
 
 const dtsFmt = "2006-01-02_15"
@@ -59,6 +60,36 @@ func (m Measurement) ids() (ids []string) {
 			nsBuf,
 			nulBytes,
 		)))
+	}
+
+	return
+}
+
+func (m Measurement) fields() (f map[string]measurementFieldType, err error) {
+	f = make(map[string]measurementFieldType)
+
+	for k := range m.Dimensions {
+		f[k] = dimension
+	}
+
+	for k := range m.Indices {
+		if _, ok := f[k]; ok {
+			err = ErrFieldInUse
+
+			return
+		}
+
+		f[k] = index
+	}
+
+	for k := range m.Labels {
+		if _, ok := f[k]; ok {
+			err = ErrFieldInUse
+
+			return
+		}
+
+		f[k] = label
 	}
 
 	return

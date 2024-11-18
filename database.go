@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -42,7 +45,7 @@ var (
 	// against a particular measurement + index name + index value and so receiving
 	// this error is a problem, and may point toward reusing/ not correctly
 	// setting the value of Measurement.When
-	ErrDuplicateMeasurement = errors.New("")
+	ErrDuplicateMeasurement = errors.New("measurement and index combination exist for this timestamp")
 )
 
 type JDB struct {
@@ -77,6 +80,15 @@ type JDB struct {
 	// which allows for mutliple measurements to use the same index name
 	// withoug clashing.
 	indices map[string]map[string]map[string][]*Measurement
+
+	// measurementFields is a mapping of Measurement.Name to a union of Dimension,
+	// Index, and Label values.
+	//
+	// This is stored as per:
+	//    measurement -> field -> type
+	// because that allows us to, essentially, keep an additive set of fields without
+	// needing to append and deduplicate slices which we'd need to for `map[string]measurementFields`
+	measurementFields map[string]map[string]measurementFieldType
 }
 
 // New returns a JDB from a databse file on disk
@@ -90,6 +102,7 @@ func New(file string) (j *JDB, err error) {
 	j.ids = make(map[string]*Measurement)
 	j.measurements = make(map[string]map[string][]*Measurement)
 	j.indices = make(map[string]map[string]map[string][]*Measurement)
+	j.measurementFields = make(map[string]map[string]measurementFieldType)
 
 	// #nosec: G302,G304
 	j.f, err = os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0640)
@@ -125,7 +138,8 @@ func New(file string) (j *JDB, err error) {
 		// flushed to disc, and so we don't care about the dedupe stuff we
 		// do when we accept a Measurement on the public, export, [JDB.Insert]
 		// api
-		j.addMeasurement(m)
+		fields, _ := m.fields()
+		j.addMeasurement(m, m.ids(), fields)
 	}
 
 	err = scanner.Err()
@@ -203,7 +217,12 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 		}
 	}
 
-	j.addMeasurement(m)
+	measurementFields, err := m.fields()
+	if err != nil {
+		return
+	}
+
+	j.addMeasurement(m, measurementIDs, measurementFields)
 
 	j.saveBuffer = append(j.saveBuffer, m)
 
@@ -216,11 +235,6 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 		slices.SortFunc(j.indices[m.Name][k][v], func(a, b *Measurement) int {
 			return a.When.Compare(b.When)
 		})
-	}
-
-	// Update the IDs map
-	for _, id := range measurementIDs {
-		j.ids[id] = m
 	}
 
 	// If we've either got a full write buffer, or we haven't saved in a while,
@@ -263,6 +277,59 @@ func (j *JDB) QueryAll(name string) (m []*Measurement, err error) {
 	return
 }
 
+func (j *JDB) QueryAllCSV(name string) (b []byte, err error) {
+	measurements, err := j.QueryAll(name)
+	if err != nil {
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	w := csv.NewWriter(buf)
+
+	fields := j.measurementFields[name]
+
+	fieldNames := make([]string, 0, len(fields))
+	for f := range fields {
+		fieldNames = append(fieldNames, f)
+	}
+
+	// Let's make the output nice and deterministic
+	slices.Sort(fieldNames)
+
+	err = w.Write(fieldNames)
+	if err != nil {
+		return
+	}
+
+	for _, m := range measurements {
+		line := make([]string, 0, len(fieldNames))
+
+		for _, f := range fieldNames {
+			t := fields[f]
+
+			switch t {
+			case dimension:
+				line = append(line, strconv.FormatFloat(m.Dimensions[f], 'g', -1, 64))
+
+			case index:
+				line = append(line, m.Indices[f])
+
+			case label:
+				line = append(line, m.Labels[f])
+			}
+		}
+
+		err = w.Write(line)
+		if err != nil {
+			return
+		}
+	}
+
+	w.Flush()
+
+	return buf.Bytes(), err
+}
+
 // QueryAllIndex returns all measurements against a specific name, which has
 // a specific index
 func (j *JDB) QueryAllIndex(name, index, indexValue string) (m []*Measurement, err error) {
@@ -283,8 +350,22 @@ func (j *JDB) QueryAllIndex(name, index, indexValue string) (m []*Measurement, e
 	return idx[indexValue], nil
 }
 
+func (j *JDB) QueryFields(measurement string) (fields []string, err error) {
+	fm, ok := j.measurementFields[measurement]
+	if !ok {
+		return nil, ErrNoSuchMeasurement
+	}
+
+	fields = make([]string, 0, len(fm))
+	for f := range fm {
+		fields = append(fields, f)
+	}
+
+	return
+}
+
 // addMeasurement adds a Measurement to the underlying fields in JDB
-func (j *JDB) addMeasurement(m *Measurement) {
+func (j *JDB) addMeasurement(m *Measurement, ids []string, fields map[string]measurementFieldType) {
 	if _, ok := j.measurements[m.Name]; !ok {
 		j.measurements[m.Name] = make(map[string][]*Measurement)
 	}
@@ -311,6 +392,18 @@ func (j *JDB) addMeasurement(m *Measurement) {
 
 		j.indices[m.Name][k][v] = append(j.indices[m.Name][k][v], m)
 	}
+
+	// Update the IDs map
+	for _, id := range ids {
+		j.ids[id] = m
+	}
+
+	// Update measurement fields
+	if _, ok := j.measurementFields[m.Name]; !ok {
+		j.measurementFields[m.Name] = make(map[string]measurementFieldType)
+	}
+
+	maps.Copy(j.measurementFields[m.Name], fields)
 }
 
 func (j *JDB) flush() (err error) {

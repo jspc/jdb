@@ -1,6 +1,8 @@
 package jdb_test
 
 import (
+	"bytes"
+	"encoding/csv"
 	"fmt"
 	"os"
 	"testing"
@@ -65,6 +67,8 @@ func TestJDB_Insert(t *testing.T) {
 	}{
 		{"Inserting a duplicate measurement fails", m, true},
 		{"Inserting a measurement with a reused time and index fails", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"abc": 4545}, Indices: map[string]string{"test": "true"}}, true},
+		{"Inserting a measurement with duplicate field names fails, labels", &jdb.Measurement{When: time.Now(), Name: "test", Dimensions: map[string]float64{"abc": 4545}, Indices: map[string]string{"test": "true"}, Labels: map[string]string{"test": "also true"}}, true},
+		{"Inserting a measurement with duplicate field names fails, indices", &jdb.Measurement{When: time.Now(), Name: "test", Dimensions: map[string]float64{"abc": 4545}, Indices: map[string]string{"test": "true", "abc": "four thousand, five hundred, and forty five"}, Labels: map[string]string{"test": "also true"}}, true},
 
 		{"Inserting a measurement without any indices succedes, however inadvisable", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"counter": 100}}, false},
 
@@ -195,6 +199,106 @@ func TestJDB_QueryAll(t *testing.T) {
 	}
 }
 
+func TestJDB_QueryAllCSV(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	for i := 0; i < 10; i++ {
+		err = db.Insert(&jdb.Measurement{
+			Name: "wibbles",
+			When: time.Now().Add(time.Hour * time.Duration(i)),
+			Dimensions: map[string]float64{
+				"wobble_count": float64(i * 17),
+				"jiggle_tally": float64(8 ^ 17),
+			},
+			Indices: map[string]string{
+				"enabled": "probably",
+				"wibbler": "0xabadbabe",
+			},
+			Labels: map[string]string{
+				"version": "v0.1.1",
+				"uptime":  "1h32m11s",
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Add one more with slight different labels
+	err = db.Insert(&jdb.Measurement{
+		Name: "wibbles",
+		When: time.Now().Add(time.Hour * 72),
+		Dimensions: map[string]float64{
+			"wobble_count": 6.1111111111113,
+			"jiggle_tally": 1,
+		},
+		Indices: map[string]string{
+			"wibbler": "0xcafebabe",
+		},
+		Labels: map[string]string{
+			"uptime":   "1h32m11s",
+			"operator": "Big Doug",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name        string
+		measurement string
+		expectRows  int
+		expectCols  int
+		expectErr   bool
+	}{
+		{"Querying non-existent measurement should fail", "floops", 0, 0, true},
+		{"Querying valid measurement should return union of all fields", "wibbles", 12, 7, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			b, err := db.QueryAllCSV(test.measurement)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+
+			buf := bytes.NewBuffer(b)
+			r := csv.NewReader(buf)
+
+			records, err := r.ReadAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if test.expectRows != len(records) {
+				t.Errorf("expected %d records, received %d", test.expectRows, len(records))
+			}
+
+			if len(records) == 0 {
+				if test.expectRows > 0 {
+					t.Fatal("there should be some columns to count, but there arent'")
+				}
+
+				return
+			}
+
+			cols := records[0]
+			if test.expectCols != len(cols) {
+				t.Errorf("expected %d columns, received %d", test.expectCols, len(cols))
+			}
+		})
+	}
+}
+
 func TestJDB_QueryAllIndex(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {
@@ -250,6 +354,54 @@ func TestJDB_QueryAllIndex(t *testing.T) {
 			rcvd := len(m)
 			if test.expectCount != rcvd {
 				t.Errorf("expected: %d, received %d", test.expectCount, rcvd)
+			}
+		})
+	}
+}
+
+func TestJDB_QueryFields(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	for i := 0; i < jdb.FlushMaxSize*5; i++ {
+		err = db.Insert(&jdb.Measurement{
+			Name: "wibbles",
+			Dimensions: map[string]float64{
+				"wobble_count": float64(i * 17),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, test := range []struct {
+		name         string
+		measurement  string
+		expectFields int
+		expectErr    bool
+	}{
+		{"Querying an unknown measure should fail", "wet_hankies", 0, true},
+		{"Querying an valid measure should succeed", "wibbles", 1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, err := db.QueryFields(test.measurement)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+
+			if test.expectFields != len(f) {
+				t.Errorf("expected %d fields, received %d", test.expectFields, len(f))
 			}
 		})
 	}
