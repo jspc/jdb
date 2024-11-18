@@ -263,7 +263,7 @@ func TestJDB_QueryAllCSV(t *testing.T) {
 		expectErr   bool
 	}{
 		{"Querying non-existent measurement should fail", "floops", 0, 0, true},
-		{"Querying valid measurement should return union of all fields", "wibbles", 12, 7, false},
+		{"Querying valid measurement should return union of all fields", "wibbles", 12, 9, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			b, err := db.QueryAllCSV(test.measurement)

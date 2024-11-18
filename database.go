@@ -296,15 +296,30 @@ func (j *JDB) QueryAllCSV(name string) (b []byte, err error) {
 	// Let's make the output nice and deterministic
 	slices.Sort(fieldNames)
 
+	// Let's prepend with the important ones
+	fieldNames = append([]string{"timestamp", "measure"}, fieldNames...)
+
 	err = w.Write(fieldNames)
 	if err != nil {
 		return
 	}
 
 	for _, m := range measurements {
-		line := make([]string, 0, len(fieldNames))
+		line := make([]string, 0, len(fieldNames)+2)
 
 		for _, f := range fieldNames {
+			if f == "timestamp" {
+				line = append(line, m.When.Format(time.RFC3339))
+
+				continue
+			}
+
+			if f == "measure" {
+				line = append(line, m.Name)
+
+				continue
+			}
+
 			t := fields[f]
 
 			switch t {
