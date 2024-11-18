@@ -31,6 +31,61 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestJDB_Insert(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	m := &jdb.Measurement{
+		When: now,
+		Name: "test",
+		Dimensions: map[string]float64{
+			"xyz": 3232,
+		},
+		Indices: map[string]string{
+			"test": "true",
+		},
+	}
+	db.Insert(m)
+
+	for _, test := range []struct {
+		name      string
+		m         *jdb.Measurement
+		expectErr bool
+	}{
+		{"Inserting a duplicate measurement fails", m, true},
+		{"Inserting a measurement with a reused time and index fails", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"abc": 4545}, Indices: map[string]string{"test": "true"}}, true},
+
+		{"Inserting a measurement without any indices succedes, however inadvisable", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"counter": 100}}, false},
+
+		// The following tests come from measurement_test.go - we duplicate them here
+		// to ensure that validations are, in fact, being called.
+		//
+		// We keep them in the original location too because we want to ensure that
+		// validate can be called separately- this allows us to fail fast in cases
+		// where we're parsing Measurements from, say, an API
+		{"Empty measurement name should fail", &jdb.Measurement{}, true},
+		{"Empty dimensions should fail", &jdb.Measurement{Name: "My Measurement"}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err = db.Insert(test.m)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+		})
+	}
+}
+
 func TestJDB_Insert_with_small_buffer(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {

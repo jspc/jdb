@@ -1,7 +1,10 @@
 package jdb
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -34,4 +37,29 @@ func (m Measurement) Validate() error {
 	}
 
 	return nil
+}
+
+func (m Measurement) ids() (ids []string) {
+	ids = make([]string, 0, len(m.Indices))
+	ns := m.When.UnixNano()
+
+	nsBuf := make([]byte, binary.MaxVarintLen64)
+	_ = binary.PutVarint(nsBuf, ns)
+
+	nulBytes := []byte{'\x00'}
+
+	for iK, iV := range m.Indices {
+		ids = append(ids, base64.StdEncoding.EncodeToString(slices.Concat(
+			[]byte(m.Name),
+			nulBytes,
+			[]byte(iK),
+			nulBytes,
+			[]byte(iV),
+			nulBytes,
+			nsBuf,
+			nulBytes,
+		)))
+	}
+
+	return
 }

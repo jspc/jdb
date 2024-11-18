@@ -27,8 +27,22 @@ var (
 	// longer then flush to disk
 	FlushMaxDuration = time.Hour
 
+	// ErrNoSuchMeasurement returns when trying to retrieve a Measurement
+	// that hasn't been indexed by this JDB instance
 	ErrNoSuchMeasurement = errors.New("unknown measurement name")
-	ErrNoSuchIndex       = errors.New("unknown index")
+
+	// ErrNoSuchIndex returns for calls to QueryAllIndex where the index in
+	// question does not exist for the specified Measurement
+	ErrNoSuchIndex = errors.New("unknown index")
+
+	// ErrDuplicateMeasurement returns when trying to Insert a Measurement, where
+	// there is already a Measurement with the same derived ID
+	//
+	// These IDs are derived in such a way that they have a Nanosecond precision
+	// against a particular measurement + index name + index value and so receiving
+	// this error is a problem, and may point toward reusing/ not correctly
+	// setting the value of Measurement.When
+	ErrDuplicateMeasurement = errors.New("")
 )
 
 type JDB struct {
@@ -37,6 +51,16 @@ type JDB struct {
 	saveBuffer []*Measurement
 	saveMutex  sync.Mutex
 	lastSave   time.Time
+
+	// ids is a mapping of derived IDs for a given measurement/ index pair
+	// and is used to ensure a degree of deduplication.
+	//
+	// An id is derived as a base64 string, from a combination of a Measurement
+	// name, the indices contained within, and the value of Measurement.When.UnixNano()
+	//
+	// This means one Measurement against a particular index can be created per
+	// billionth of a second, which should be fine
+	ids map[string]*Measurement
 
 	// measurements are stored as per:
 	//     measurements[measurement_name] = map[date + hour][]Measurement
@@ -63,6 +87,7 @@ func New(file string) (j *JDB, err error) {
 	j.saveBuffer = make([]*Measurement, 0, FlushMaxSize)
 	j.lastSave = time.Now()
 
+	j.ids = make(map[string]*Measurement)
 	j.measurements = make(map[string]map[string][]*Measurement)
 	j.indices = make(map[string]map[string]map[string][]*Measurement)
 
@@ -96,6 +121,10 @@ func New(file string) (j *JDB, err error) {
 
 		measurementCount++
 
+		// We're using addMeasurement directly because we trust the data
+		// flushed to disc, and so we don't care about the dedupe stuff we
+		// do when we accept a Measurement on the public, export, [JDB.Insert]
+		// api
 		j.addMeasurement(m)
 	}
 
@@ -156,9 +185,23 @@ func (j *JDB) Close() (err error) {
 }
 
 func (j *JDB) Insert(m *Measurement) (err error) {
+	// Validate the measurement before doing anything else
+	if err = m.Validate(); err != nil {
+		return
+	}
+
 	// Insert one thing at a time, for goodness sake
 	j.saveMutex.Lock()
 	defer j.saveMutex.Unlock()
+
+	// Grab Measurement IDs; if we have one that exists then
+	// error out
+	measurementIDs := m.ids()
+	for _, id := range measurementIDs {
+		if _, ok := j.ids[id]; ok {
+			return ErrDuplicateMeasurement
+		}
+	}
 
 	j.addMeasurement(m)
 
@@ -173,6 +216,11 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 		slices.SortFunc(j.indices[m.Name][k][v], func(a, b *Measurement) int {
 			return a.When.Compare(b.When)
 		})
+	}
+
+	// Update the IDs map
+	for _, id := range measurementIDs {
+		j.ids[id] = m
 	}
 
 	// If we've either got a full write buffer, or we haven't saved in a while,
