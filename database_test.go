@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -197,6 +198,16 @@ func TestJDB_QueryAll(t *testing.T) {
 			if test.expectCount != rcvd {
 				t.Errorf("expected: %d, received %d", test.expectCount, rcvd)
 			}
+
+			t.Run("results are sorted", func(t *testing.T) {
+				sorted := slices.IsSortedFunc(m, func(a, b *jdb.Measurement) int {
+					return a.When.Compare(b.When)
+				})
+
+				if !sorted {
+					t.Error("Results are not sorted")
+				}
+			})
 		})
 	}
 }
@@ -253,6 +264,16 @@ func TestJDB_QueryAll_options(t *testing.T) {
 			if test.expectCount != rcvd {
 				t.Errorf("expected: %d, received %d", test.expectCount, rcvd)
 			}
+
+			t.Run("results are sorted", func(t *testing.T) {
+				sorted := slices.IsSortedFunc(m, func(a, b *jdb.Measurement) int {
+					return a.When.Compare(b.When)
+				})
+
+				if !sorted {
+					t.Error("Results are not sorted")
+				}
+			})
 		})
 	}
 }
@@ -413,6 +434,16 @@ func TestJDB_QueryAllIndex(t *testing.T) {
 			if test.expectCount != rcvd {
 				t.Errorf("expected: %d, received %d", test.expectCount, rcvd)
 			}
+
+			t.Run("results are sorted", func(t *testing.T) {
+				sorted := slices.IsSortedFunc(m, func(a, b *jdb.Measurement) int {
+					return a.When.Compare(b.When)
+				})
+
+				if !sorted {
+					t.Error("Results are not sorted")
+				}
+			})
 		})
 	}
 }

@@ -85,10 +85,10 @@ type JDB struct {
 	measurements map[string]map[string][]*Measurement
 
 	// indices are stored as per:
-	//    indices[measurement_name] = map[index_name]map[index_value][]*Measurement
+	//    indices[measurement_name] = map[index_name]map[index_value]map[date + hour][]*Measurement
 	// which allows for mutliple measurements to use the same index name
-	// withoug clashing.
-	indices map[string]map[string]map[string][]*Measurement
+	// without clashing.
+	indices map[string]map[string]map[string]map[string][]*Measurement
 
 	// measurementFields is a mapping of Measurement.Name to a union of Dimension,
 	// Index, and Label values.
@@ -119,7 +119,7 @@ func New(file string) (j *JDB, err error) {
 
 	j.ids = make(map[string]*Measurement)
 	j.measurements = make(map[string]map[string][]*Measurement)
-	j.indices = make(map[string]map[string]map[string][]*Measurement)
+	j.indices = make(map[string]map[string]map[string]map[string][]*Measurement)
 	j.measurementFields = make(map[string]map[string]measurementFieldType)
 
 	// #nosec: G302,G304
@@ -184,11 +184,13 @@ func New(file string) (j *JDB, err error) {
 	for _, idx := range j.indices {
 		for _, v := range idx {
 			for _, measures := range v {
-				indexCount++
+				for _, ts := range measures {
+					indexCount++
 
-				slices.SortFunc(measures, func(a, b *Measurement) int {
-					return a.When.Compare(b.When)
-				})
+					slices.SortFunc(ts, func(a, b *Measurement) int {
+						return a.When.Compare(b.When)
+					})
+				}
 			}
 		}
 	}
@@ -264,7 +266,7 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 	})
 
 	for k, v := range m.Indices {
-		slices.SortFunc(j.indices[m.Name][k][v], func(a, b *Measurement) int {
+		slices.SortFunc(j.indices[m.Name][k][v][m.dts()], func(a, b *Measurement) int {
 			return a.When.Compare(b.When)
 		})
 	}
@@ -313,6 +315,15 @@ func (j *JDB) QueryAll(name string, opts *Options) (m []*Measurement, err error)
 		}
 	}
 
+	// Here we're sorting the slice of measurement slices because, of course, a map
+	// doesn't persist write order due to how elements are hashed
+	//
+	// At some point this has the potential to become quite inefficient; if a Query
+	// returns a lot of matching shards then this extra sort becomes overhead.
+	//
+	// At this point we're going to want to look at the final map[string][]*Measurement
+	// in the various data structures we keep. This will become some kind of shard
+	// container that can travel through shards in order
 	slices.SortFunc(tmpM, func(a, b []*Measurement) int {
 		return a[0].When.Compare(b[0].When)
 	})
@@ -431,11 +442,35 @@ func (j *JDB) QueryAllIndex(name, index, indexValue string, opts *Options) (m []
 		return
 	}
 
-	if opts == nil {
-		return idx[indexValue], nil
+	iv, ok := idx[indexValue]
+	if !ok {
+		return
 	}
 
-	return opts.validMeasurements(idx[indexValue]), nil
+	tmpM := make([][]*Measurement, 0)
+	for _, shard := range iv {
+		switch opts {
+		case nil:
+			tmpM = append(tmpM, shard)
+
+		default:
+			v := opts.validMeasurements(shard)
+			if len(v) > 0 {
+				tmpM = append(tmpM, v)
+			}
+		}
+	}
+
+	slices.SortFunc(tmpM, func(a, b []*Measurement) int {
+		return a[0].When.Compare(b[0].When)
+	})
+
+	m = make([]*Measurement, 0)
+	for _, t := range tmpM {
+		m = append(m, t...)
+	}
+
+	return
 }
 
 // QueryFields returns the fields set for a Measurement
@@ -467,19 +502,23 @@ func (j *JDB) addMeasurement(m *Measurement, ids []string, fields map[string]mea
 	j.measurements[m.Name][dsStr] = append(j.measurements[m.Name][dsStr], m)
 
 	if _, ok := j.indices[m.Name]; !ok {
-		j.indices[m.Name] = make(map[string]map[string][]*Measurement)
+		j.indices[m.Name] = make(map[string]map[string]map[string][]*Measurement)
 	}
 
 	for k, v := range m.Indices {
 		if _, ok := j.indices[m.Name][k]; !ok {
-			j.indices[m.Name][k] = make(map[string][]*Measurement)
+			j.indices[m.Name][k] = make(map[string]map[string][]*Measurement)
 		}
 
 		if _, ok := j.indices[m.Name][k][v]; !ok {
-			j.indices[m.Name][k][v] = make([]*Measurement, 0)
+			j.indices[m.Name][k][v] = make(map[string][]*Measurement, 0)
 		}
 
-		j.indices[m.Name][k][v] = append(j.indices[m.Name][k][v], m)
+		if _, ok := j.indices[m.Name][k][v][dsStr]; !ok {
+			j.indices[m.Name][k][v][dsStr] = make([]*Measurement, 0)
+		}
+
+		j.indices[m.Name][k][v][dsStr] = append(j.indices[m.Name][k][v][dsStr], m)
 	}
 
 	// Update the IDs map
