@@ -152,6 +152,88 @@ func TestJDB_Upsert(t *testing.T) {
 	}
 }
 
+func TestJDB_Upsert_Complex(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	jdb.FlushMaxSize = 1_000_000
+	jdb.FlushMaxDuration = 1<<63 - 1
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	runs := 20_000
+
+	for i := 0; i < runs; i++ {
+		fmt.Printf("%d /  %d \r", i+1, runs)
+
+		if i%7 == 0 {
+			err := db.Upsert(&jdb.Measurement{
+				Name: "supplementary",
+				When: time.Now(),
+				Dimensions: map[string]float64{
+					"idx": float64(i),
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		err := db.Upsert(&jdb.Measurement{
+			Name: "upserts",
+			When: now,
+			Indices: map[string]string{
+				"test_func": "TestJDB_Upsert_Complex",
+			},
+			Labels: map[string]string{
+				"iteration": fmt.Sprintf("%d", i),
+			},
+			Dimensions: map[string]float64{
+				"value": float64(i),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fmt.Println()
+
+	// Get data without deduping
+	dupes, err := db.QueryAll("upserts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if runs != len(dupes) {
+		t.Errorf("expected %d, received %d", runs, len(dupes))
+	}
+
+	// Get data after deduping
+	dedupes, err := db.QueryAll("upserts", &jdb.Options{Deduplicate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(dedupes) > 1 {
+		t.Errorf("expected 1, received %d", len(dedupes))
+	}
+
+	v := dedupes[0].Dimensions["value"]
+	if v != float64(runs-1) {
+		t.Errorf("expected %f, received %f", float64(runs-1), v)
+	}
+}
+
 func TestJDB_Insert_with_small_buffer(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {
