@@ -29,6 +29,19 @@ type Options struct {
 	// this field. If `To` is unset, then Since returns up until the
 	// current time
 	Since time.Duration `json:"since" form:"since"`
+
+	// Deduplicate measurements, when you know there's going to be upserted
+	// data in your database.
+	//
+	// This is (potentially!) a very expensive operation, depending on the
+	// amount of data being returned. Because of this, we default this to
+	// false, because upserting into JDB isn't necessarily the correct
+	// way to use it.
+	//
+	// Set this to true if using `Upsert`, rather than `Insert`, where you
+	// know that you're likely to have reused the same measure+timestamp+index
+	// combination, and you don't want to have to deduplicate yourself
+	Deduplicate bool `json:"deduplicate" form:"deduplicate"`
 }
 
 func (o Options) mRange() (from, to time.Time) {

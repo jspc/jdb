@@ -233,6 +233,25 @@ func (j *JDB) Close() (err error) {
 //
 // The upshot of this is that calls to Insert are immediately consistent.
 func (j *JDB) Insert(m *Measurement) (err error) {
+	return j.insert(m, false)
+}
+
+// Upsert a Measurement into the database.
+//
+// This function works identically to `Insert` with the exception that
+// it doesn't error out if a measurement/ timestamp combination exists.
+//
+// This is useful for updating old records, but it should be used sparingly;
+// our database is persisted as an append-only structure, which means that each call
+// to this function writes an extra entry to the disk.
+//
+// Calls to any of the `Query*` functions should set `Deduplicate: true` in Options
+// or be aware that returned data will contain duplicated data.
+func (j *JDB) Upsert(m *Measurement) (err error) {
+	return j.insert(m, true)
+}
+
+func (j *JDB) insert(m *Measurement, force bool) (err error) {
 	// Validate the measurement before doing anything else
 	if err = m.Validate(); err != nil {
 		return
@@ -243,11 +262,13 @@ func (j *JDB) Insert(m *Measurement) (err error) {
 	defer j.saveMutex.Unlock()
 
 	// Grab Measurement IDs; if we have one that exists then
-	// error out
+	// error out, unless we're upserting.
 	measurementIDs := m.ids()
-	for _, id := range measurementIDs {
-		if _, ok := j.ids[id]; ok {
-			return ErrDuplicateMeasurement
+	if !force {
+		for _, id := range measurementIDs {
+			if _, ok := j.ids[id]; ok {
+				return ErrDuplicateMeasurement
+			}
 		}
 	}
 
@@ -331,6 +352,23 @@ func (j *JDB) QueryAll(name string, opts *Options) (m []*Measurement, err error)
 	m = make([]*Measurement, 0)
 	for _, t := range tmpM {
 		m = append(m, t...)
+	}
+
+	// Finally, deduplicate measurements for upserted data, if requested
+	if opts != nil && opts.Deduplicate {
+		deduped := make([]*Measurement, 0, len(m))
+
+		// Iterate through the slice and add the last occurrence of each unique When.
+		for i := 0; i < len(m); i++ {
+			// Skip over duplicates by comparing the current and next When values.
+			for i+1 < len(m) && m[i].When == m[i+1].When {
+				i++
+			}
+
+			deduped = append(deduped, m[i])
+		}
+
+		m = slices.Clip(deduped)
 	}
 
 	return

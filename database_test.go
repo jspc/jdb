@@ -91,6 +91,149 @@ func TestJDB_Insert(t *testing.T) {
 	}
 }
 
+func TestJDB_Upsert(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	m := &jdb.Measurement{
+		When: now,
+		Name: "test",
+		Dimensions: map[string]float64{
+			"xyz": 3232,
+		},
+		Indices: map[string]string{
+			"test": "true",
+		},
+	}
+	db.Insert(m)
+
+	for _, test := range []struct {
+		name      string
+		m         *jdb.Measurement
+		expectXyz float64
+		expectErr bool
+	}{
+		{"Inserting a duplicate measurement succedes", m, 3232, false},
+		{"Inserting a measurement of the same time and name, with different values, returns new values", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"xyz": 9999}, Indices: map[string]string{"test": "true"}}, 9999, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err = db.Upsert(test.m)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+
+			m, err := db.QueryAll("test", &jdb.Options{Deduplicate: true})
+			if err != nil {
+				t.Error(err)
+			}
+
+			t.Logf("%#v", m)
+
+			if len(m) != 1 {
+				t.Fatalf("expected 1 measurement, received %d", len(m))
+			}
+
+			v := m[0].Dimensions["xyz"]
+			if test.expectXyz != v {
+				t.Errorf("expected %f, received %f", test.expectXyz, v)
+			}
+		})
+	}
+}
+
+func TestJDB_Upsert_Complex(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	jdb.FlushMaxSize = 1_000_000
+	jdb.FlushMaxDuration = 1<<63 - 1
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	runs := 20_000
+
+	for i := 0; i < runs; i++ {
+		fmt.Printf("%d /  %d \r", i+1, runs)
+
+		if i%7 == 0 {
+			err := db.Upsert(&jdb.Measurement{
+				Name: "supplementary",
+				When: time.Now(),
+				Dimensions: map[string]float64{
+					"idx": float64(i),
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		err := db.Upsert(&jdb.Measurement{
+			Name: "upserts",
+			When: now,
+			Indices: map[string]string{
+				"test_func": "TestJDB_Upsert_Complex",
+			},
+			Labels: map[string]string{
+				"iteration": fmt.Sprintf("%d", i),
+			},
+			Dimensions: map[string]float64{
+				"value": float64(i),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fmt.Println()
+
+	// Get data without deduping
+	dupes, err := db.QueryAll("upserts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if runs != len(dupes) {
+		t.Errorf("expected %d, received %d", runs, len(dupes))
+	}
+
+	// Get data after deduping
+	dedupes, err := db.QueryAll("upserts", &jdb.Options{Deduplicate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(dedupes) > 1 {
+		t.Errorf("expected 1, received %d", len(dedupes))
+	}
+
+	v := dedupes[0].Dimensions["value"]
+	if v != float64(runs-1) {
+		t.Errorf("expected %f, received %f", float64(runs-1), v)
+	}
+}
+
 func TestJDB_Insert_with_small_buffer(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {
