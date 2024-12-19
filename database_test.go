@@ -91,6 +91,67 @@ func TestJDB_Insert(t *testing.T) {
 	}
 }
 
+func TestJDB_Upsert(t *testing.T) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	db, err := jdb.New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer db.Close()
+
+	now := time.Now()
+	m := &jdb.Measurement{
+		When: now,
+		Name: "test",
+		Dimensions: map[string]float64{
+			"xyz": 3232,
+		},
+		Indices: map[string]string{
+			"test": "true",
+		},
+	}
+	db.Insert(m)
+
+	for _, test := range []struct {
+		name      string
+		m         *jdb.Measurement
+		expectXyz float64
+		expectErr bool
+	}{
+		{"Inserting a duplicate measurement succedes", m, 3232, false},
+		{"Inserting a measurement of the same time and name, with different values, returns new values", &jdb.Measurement{When: now, Name: "test", Dimensions: map[string]float64{"xyz": 9999}, Indices: map[string]string{"test": "true"}}, 9999, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err = db.Upsert(test.m)
+			if test.expectErr == (err == nil) {
+				t.Errorf("expected: %v, received %#v", test.expectErr, err)
+			}
+
+			m, err := db.QueryAll("test", &jdb.Options{Deduplicate: true})
+			if err != nil {
+				t.Error(err)
+			}
+
+			t.Logf("%#v", m)
+
+			if len(m) != 1 {
+				t.Fatalf("expected 1 measurement, received %d", len(m))
+			}
+
+			v := m[0].Dimensions["xyz"]
+			if test.expectXyz != v {
+				t.Errorf("expected %f, received %f", test.expectXyz, v)
+			}
+		})
+	}
+}
+
 func TestJDB_Insert_with_small_buffer(t *testing.T) {
 	f, err := os.CreateTemp("", "")
 	if err != nil {
