@@ -2,10 +2,11 @@ name: CI
 
 on:
   push:
-    branches:
+    tags:
       - '*'
 
-permissions: read-all
+permissions:
+  contents: write
 
 jobs:
   test:
@@ -20,7 +21,7 @@ jobs:
     - name: Test
       run: |
         chmod 0400 testdata/ro.db
-        go test -covermode=count -coverprofile=coverage.out -v ./...
+        go test -covermode=count -coverprofile=coverage.out -v -count 100 -failfast ./...
 
 
     - name: gosec
@@ -39,3 +40,24 @@ jobs:
         name: build-artefacts
         path: |
           coverage.out
+
+    - name: SonarCloud Scan
+      uses: sonarsource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    - name: Generate SBOM
+      uses: CycloneDX/gh-gomod-generate-sbom@v2
+      with:
+        version: v1
+        args: mod -licenses -json -output bom.json
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          bom.json
+          coverage.out
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

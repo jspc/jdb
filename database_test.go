@@ -173,8 +173,6 @@ func TestJDB_Upsert_Complex(t *testing.T) {
 	runs := 20_000
 
 	for i := 0; i < runs; i++ {
-		fmt.Printf("%d /  %d \r", i+1, runs)
-
 		if i%7 == 0 {
 			err := db.Upsert(&jdb.Measurement{
 				Name: "supplementary",
@@ -205,8 +203,6 @@ func TestJDB_Upsert_Complex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
-	fmt.Println()
 
 	// Get data without deduping
 	dupes, err := db.QueryAll("upserts", nil)
